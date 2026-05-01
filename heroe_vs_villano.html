@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Héroe vs Villano</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0d0d1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      color: #eee;
+      user-select: none;
+    }
+    h1 {
+      font-size: 26px;
+      margin-bottom: 14px;
+      letter-spacing: 2px;
+      text-shadow: 0 0 18px #f0a;
+    }
+    canvas {
+      border: 3px solid #333;
+      border-radius: 6px;
+      box-shadow: 0 0 40px rgba(0,0,0,0.8);
+      display: block;
+    }
+    .controls {
+      display: flex;
+      gap: 60px;
+      margin-top: 14px;
+      font-size: 14px;
+    }
+    .hero  { color: #4fc3f7; }
+    .villain { color: #ef5350; }
+    .key {
+      display: inline-block;
+      background: #333;
+      border: 1px solid #666;
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 12px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>⚔️ Héroe vs Villano</h1>
+  <canvas id="canvas" width="620" height="520"></canvas>
+  <div class="controls">
+    <div class="hero">🦸 Héroe &nbsp;
+      <span class="key">↑</span>
+      <span class="key">↓</span>
+      <span class="key">←</span>
+      <span class="key">→</span>
+    </div>
+    <div class="villain">🦹 Villano &nbsp;
+      <span class="key">W</span>
+      <span class="key">S</span>
+      <span class="key">A</span>
+      <span class="key">D</span>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const W = canvas.width;
+    const H = canvas.height;
+
+    // ── Mapa H ──────────────────────────────────────────────
+    const SW = 90;            // ancho de cada calle
+    const LX = 90;            // x inicio calle izquierda
+    const RX = W - LX - SW;  // x inicio calle derecha
+    const HY = (H - SW) / 2; // y inicio calle horizontal
+    // Margen de los extremos
+    const TOP = 0, BOT = H;
+
+    // Las tres franjas que componen la H
+    const streets = [
+      { x: LX,      y: TOP, w: SW,           h: H   }, // izquierda
+      { x: RX,      y: TOP, w: SW,           h: H   }, // derecha
+      { x: LX, y: HY, w: RX - LX + SW, h: SW  },      // horizontal
+    ];
+
+    function inH(x, y, r) {
+      const il = x >= LX + r && x <= LX + SW - r && y >= r && y <= H - r;
+      const ir = x >= RX + r && x <= RX + SW - r && y >= r && y <= H - r;
+      const ih = x >= LX + r && x <= RX + SW - r && y >= HY + r && y <= HY + SW - r;
+      return il || ir || ih;
+    }
+
+    // ── Personajes ──────────────────────────────────────────
+    const SPEED = 2.8;
+    const R = 18;
+
+    const hero = {
+      x: LX + SW / 2,
+      y: 70,
+      r: R,
+      color: '#29b6f6',
+      glow: '#0288d1',
+      emoji: '🦸',
+      name: 'Héroe',
+    };
+
+    const villain = {
+      x: RX + SW / 2,
+      y: H - 70,
+      r: R,
+      color: '#ef5350',
+      glow: '#b71c1c',
+      emoji: '🦹',
+      name: 'Villano',
+    };
+
+    // ── Teclado ─────────────────────────────────────────────
+    const keys = {};
+    window.addEventListener('keydown', e => {
+      keys[e.key] = true;
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key))
+        e.preventDefault();
+    });
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+    function move(ch, up, down, left, right) {
+      let nx = ch.x + (keys[right] ? SPEED : 0) - (keys[left] ? SPEED : 0);
+      let ny = ch.y + (keys[down]  ? SPEED : 0) - (keys[up]   ? SPEED : 0);
+      if (inH(nx, ny, ch.r)) { ch.x = nx; ch.y = ny; return; }
+      if (inH(nx, ch.y, ch.r)) { ch.x = nx; return; }
+      if (inH(ch.x, ny, ch.r)) { ch.y = ny; }
+    }
+
+    // ── Dibujo ───────────────────────────────────────────────
+    function drawMap() {
+      // Fondo (edificios / césped)
+      ctx.fillStyle = '#1b2a1b';
+      ctx.fillRect(0, 0, W, H);
+
+      // Bloques de edificios
+      const blocks = [
+        [0,        0,   LX,      HY],
+        [LX + SW,  0,   RX - LX - SW, HY],
+        [RX + SW,  0,   W - RX - SW, HY],
+        [0,        HY + SW, LX,  H - HY - SW],
+        [LX + SW,  HY + SW, RX - LX - SW, H - HY - SW],
+        [RX + SW,  HY + SW, W - RX - SW, H - HY - SW],
+        [0,        HY,  LX,      SW],
+        [RX + SW,  HY,  W - RX - SW, SW],
+      ];
+
+      // Edificios con ventanas
+      blocks.forEach(([bx, by, bw, bh]) => {
+        if (bw <= 0 || bh <= 0) return;
+        ctx.fillStyle = '#2e2e3e';
+        ctx.fillRect(bx, by, bw, bh);
+        // ventanas
+        ctx.fillStyle = '#3a3a50';
+        const cols = Math.floor(bw / 22);
+        const rows = Math.floor(bh / 22);
+        for (let c = 0; c < cols; c++)
+          for (let rr = 0; rr < rows; rr++) {
+            const wx = bx + c * 22 + 6;
+            const wy = by + rr * 22 + 6;
+            if (wx + 10 <= bx + bw && wy + 10 <= by + bh) {
+              const lit = Math.sin(wx * 7 + wy * 13) > 0.2;
+              ctx.fillStyle = lit ? '#ffe082' : '#2a2a3a';
+              ctx.fillRect(wx, wy, 10, 10);
+            }
+          }
+      });
+
+      // Asfalto
+      ctx.fillStyle = '#3d3d3d';
+      streets.forEach(s => ctx.fillRect(s.x, s.y, s.w, s.h));
+
+      // Bordes de acera
+      ctx.strokeStyle = '#aaa';
+      ctx.lineWidth = 3;
+      streets.forEach(s => {
+        ctx.strokeRect(s.x, s.y, s.w, s.h);
+      });
+
+      // Líneas de carretera (discontinuas amarillas)
+      ctx.strokeStyle = '#f9a825';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([18, 14]);
+
+      // Centro calle izquierda (vertical)
+      ctx.beginPath();
+      ctx.moveTo(LX + SW / 2, TOP);   ctx.lineTo(LX + SW / 2, HY);
+      ctx.moveTo(LX + SW / 2, HY + SW); ctx.lineTo(LX + SW / 2, BOT);
+      ctx.stroke();
+
+      // Centro calle derecha (vertical)
+      ctx.beginPath();
+      ctx.moveTo(RX + SW / 2, TOP);   ctx.lineTo(RX + SW / 2, HY);
+      ctx.moveTo(RX + SW / 2, HY + SW); ctx.lineTo(RX + SW / 2, BOT);
+      ctx.stroke();
+
+      // Centro calle horizontal
+      ctx.beginPath();
+      ctx.moveTo(LX + SW, HY + SW / 2); ctx.lineTo(RX, HY + SW / 2);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+    }
+
+    function drawCharacter(ch) {
+      ctx.save();
+
+      // Sombra en el suelo
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(ch.x + 3, ch.y + ch.r - 4, ch.r * 0.85, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Aura / brillo
+      const grd = ctx.createRadialGradient(ch.x, ch.y, 0, ch.x, ch.y, ch.r + 8);
+      grd.addColorStop(0, ch.color + 'cc');
+      grd.addColorStop(1, ch.glow + '00');
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(ch.x, ch.y, ch.r + 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Círculo principal
+      ctx.fillStyle = ch.color;
+      ctx.beginPath();
+      ctx.arc(ch.x, ch.y, ch.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Emoji
+      ctx.font = `${ch.r * 1.4}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(ch.emoji, ch.x, ch.y + 1);
+
+      ctx.restore();
+    }
+
+    // ── Estado de juego ──────────────────────────────────────
+    let state = 'playing'; // 'playing' | 'caught'
+    let winner = '';
+
+    function checkCollision() {
+      const dx = hero.x - villain.x;
+      const dy = hero.y - villain.y;
+      return Math.sqrt(dx * dx + dy * dy) < hero.r + villain.r - 4;
+    }
+
+    function reset() {
+      hero.x = LX + SW / 2;  hero.y = 70;
+      villain.x = RX + SW / 2; villain.y = H - 70;
+      state = 'playing';
+    }
+
+    window.addEventListener('keydown', e => {
+      if ((e.key === 'r' || e.key === 'R') && state === 'caught') reset();
+    });
+
+    // ── Loop principal ───────────────────────────────────────
+    function loop() {
+      if (state === 'playing') {
+        move(hero,    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight');
+        move(villain, 'w',       's',         'a',         'd');
+        if (checkCollision()) { state = 'caught'; winner = 'Héroe'; }
+      }
+
+      drawMap();
+      drawCharacter(villain);
+      drawCharacter(hero);
+
+      if (state === 'caught') {
+        ctx.fillStyle = 'rgba(0,0,0,0.62)';
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#f0a';
+        ctx.shadowBlur = 30;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 36px Segoe UI';
+        ctx.fillText('🎉 ¡El Héroe atrapó al Villano! 🎉', W / 2, H / 2 - 28);
+        ctx.shadowBlur = 0;
+        ctx.font = '18px Segoe UI';
+        ctx.fillStyle = '#ccc';
+        ctx.fillText('Pulsa  R  para reiniciar', W / 2, H / 2 + 24);
+        ctx.restore();
+      }
+
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
